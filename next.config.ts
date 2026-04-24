@@ -1,11 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  experimental: {
-    typedRoutes: true,
-  },
+  typedRoutes: true,
   images: {
-    domains: ["graph.facebook.com"],
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "graph.facebook.com",
+      },
+    ],
   },
 };
 
