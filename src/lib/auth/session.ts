@@ -1,3 +1,4 @@
+import type { Route } from "next";
 import type { Session } from "next-auth";
 import { redirect } from "next/navigation";
 
@@ -37,9 +38,9 @@ export async function requireUser(): Promise<SessionUser> {
 export async function requireUserOrRedirect(callbackUrl?: string): Promise<SessionUser> {
   const session = await auth();
   if (!session?.user?.id) {
-    const target = callbackUrl
+    const target = (callbackUrl
       ? `/login?callbackUrl=${encodeURIComponent(callbackUrl)}`
-      : "/login";
+      : "/login") as Route;
     redirect(target);
   }
   return normalizeUser(session.user);
