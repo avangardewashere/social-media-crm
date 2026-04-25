@@ -21,8 +21,11 @@ export const authOptions = {
   pages: {
     signIn: "/login",
   },
+  // JWT sessions so the auth() helper can run inside Edge middleware
+  // without reaching the Prisma adapter. Users + accounts still persist
+  // through the adapter on Node-runtime callers.
   session: {
-    strategy: "database",
+    strategy: "jwt",
   },
   callbacks: {
     authorized({ auth }) {
