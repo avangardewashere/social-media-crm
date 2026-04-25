@@ -1,0 +1,253 @@
+// Prisma schema for social-media-crm.
+// Day 2 Phase 2: identity tables.
+// Day 2 Phase 3: posts, media, targets, scheduled jobs, publish attempts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Enums --------------------------------------------------------------
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum Platform {
+  FACEBOOK
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+enum ScheduledJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+// --- NextAuth adapter tables -------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+
+  accounts    Account[]
+  sessions    Session[]
+  memberships Membership[]
+  posts       Post[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  // Set when Graph returns code 190 (token expired/revoked).
+  needsReauth Boolean @default(false)
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectedPages ConnectedPage[]
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// --- Multi-tenant identity ---------------------------------------------
+
+model Organization {
+  id   String @id @default(cuid())
+  name String
+  slug String @unique
+
+  memberships Membership[]
+  pages       ConnectedPage[]
+  posts       Post[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Membership {
+  id             String         @id @default(cuid())
+  userId         String
+  organizationId String
+  role           MembershipRole @default(MEMBER)
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+// --- Connected social pages --------------------------------------------
+
+model ConnectedPage {
+  id             String   @id @default(cuid())
+  organizationId String
+  accountId      String
+  platform       Platform
+  externalId     String
+  name           String
+  accessToken    String   @db.Text
+  needsReauth    Boolean  @default(false)
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  targets      PostTarget[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, platform, externalId])
+  @@index([organizationId])
+  @@index([accountId])
+}
+
+// --- Posts, scheduling, publish history --------------------------------
+
+model Post {
+  id             String     @id @default(cuid())
+  organizationId String
+  authorId       String
+  status         PostStatus @default(DRAFT)
+  body           String     @db.Text
+  scheduledAt    DateTime?
+  publishedAt    DateTime?
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  media        PostMedia[]
+  targets      PostTarget[]
+  jobs         ScheduledJob[]
+  attempts     PublishAttempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, status])
+  @@index([authorId])
+  @@index([scheduledAt])
+}
+
+model PostMedia {
+  id       String @id @default(cuid())
+  postId   String
+  url      String
+  mimeType String
+  position Int    @default(0)
+  width    Int?
+  height   Int?
+  bytes    Int?
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([postId])
+}
+
+model PostTarget {
+  id              String  @id @default(cuid())
+  postId          String
+  connectedPageId String
+  // Set after a successful publish; used to dedupe + back-reference Graph posts.
+  platformPostId  String?
+
+  post          Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  connectedPage ConnectedPage @relation(fields: [connectedPageId], references: [id], onDelete: Cascade)
+  attempts      PublishAttempt[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, connectedPageId])
+  @@index([connectedPageId])
+}
+
+model ScheduledJob {
+  id        String             @id @default(cuid())
+  postId    String
+  // BullMQ job id; nullable when the row is created before the job is enqueued.
+  bullJobId String?
+  runAt     DateTime
+  status    ScheduledJobStatus @default(PENDING)
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bullJobId])
+  @@index([postId])
+  @@index([runAt, status])
+}
+
+model PublishAttempt {
+  id             String   @id @default(cuid())
+  postId         String
+  postTargetId   String
+  succeeded      Boolean
+  errorCode      String?
+  errorMessage   String?  @db.Text
+  platformPostId String?
+  latencyMs      Int?
+  attemptedAt    DateTime @default(now())
+
+  post       Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postTarget PostTarget @relation(fields: [postTargetId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([postTargetId])
+  @@index([attemptedAt])
+}

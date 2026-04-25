@@ -18,6 +18,25 @@ const eslintConfig = defineConfig([
         { prefer: "type-imports", fixStyle: "inline-type-imports" },
       ],
       "unused-imports/no-unused-imports": "error",
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@prisma/client",
+              message:
+                "Import the runtime client from @/lib/db/client and types from @/types/db.",
+              allowTypeImports: true,
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/lib/db/**/*.ts", "src/types/db.ts", "prisma/**/*.ts"],
+    rules: {
+      "no-restricted-imports": "off",
     },
   },
   prettierConfig,
