@@ -1,5 +1,5 @@
 import { decrypt } from "@/lib/auth/crypto";
-import { markPageNeedsReauth } from "@/lib/db/repos/pages";
+import { clearPageNeedsReauth, markPageNeedsReauth } from "@/lib/db/repos/pages";
 import type { ConnectedPage } from "@/types/db";
 
 import { graphFetch } from "./client";
@@ -42,6 +42,11 @@ export async function validatePageToken(page: ConnectedPage): Promise<ValidateRe
       { access_token: token, fields: "id" },
       { accountId: page.accountId },
     );
+    // Self-heal: a previously-flagged page that now validates clearly
+    // (likely re-authed out-of-band) gets the flag cleared.
+    if (page.needsReauth) {
+      await clearPageNeedsReauth(page.id);
+    }
     return { pageId: page.id, ok: true };
   } catch (err) {
     if (err instanceof FacebookError && err.isTokenExpired()) {

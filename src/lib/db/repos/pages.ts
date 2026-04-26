@@ -55,6 +55,13 @@ export async function markPageNeedsReauth(id: string): Promise<ConnectedPage> {
   });
 }
 
+export async function clearPageNeedsReauth(id: string): Promise<ConnectedPage> {
+  return prisma.connectedPage.update({
+    where: { id },
+    data: { needsReauth: false },
+  });
+}
+
 export async function countPagesNeedingReauth(organizationId: string): Promise<number> {
   return prisma.connectedPage.count({
     where: { organizationId, needsReauth: true, deletedAt: null },
