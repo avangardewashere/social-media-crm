@@ -25,10 +25,41 @@ async function exchangeForLongLivedToken(shortLivedToken: string): Promise<LongL
   return (await res.json()) as LongLivedTokenResponse;
 }
 
+// Slug-safe lowercase + dashes. Falls back to a stable random suffix.
+function buildOrgSlug(seed: string): string {
+  const base = seed
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return base ? `${base}-${suffix}` : `org-${suffix}`;
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authOptions,
   adapter: PrismaAdapter(prisma),
   events: {
+    // Auto-provision an Organization + OWNER Membership the first time
+    // a user signs in. Multi-org support (invites, switcher) lives
+    // post-week-1; until then every user gets exactly one personal org.
+    async createUser({ user }) {
+      if (!user.id) return;
+      const seed = user.name ?? user.email ?? user.id;
+      const org = await prisma.organization.create({
+        data: {
+          name: user.name ? `${user.name}'s workspace` : "My workspace",
+          slug: buildOrgSlug(seed),
+        },
+      });
+      await prisma.membership.create({
+        data: {
+          userId: user.id,
+          organizationId: org.id,
+          role: "OWNER",
+        },
+      });
+    },
     async signIn({ account }) {
       if (account?.provider !== "facebook" || !account.access_token) return;
 
