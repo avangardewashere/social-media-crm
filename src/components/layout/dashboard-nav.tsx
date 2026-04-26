@@ -6,16 +6,19 @@ import type { SessionUser } from "@/lib/auth/session";
 
 type DashboardNavProps = {
   user: SessionUser;
+  // Number of connected pages flagged needsReauth in the user's org —
+  // surfaces as a small badge next to the Accounts link.
+  reauthBadgeCount?: number;
 };
 
-const NAV_LINKS: { href: Route; label: string }[] = [
+const NAV_LINKS: { href: Route; label: string; badgeKey?: string }[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/posts", label: "Posts" },
   { href: "/calendar", label: "Calendar" },
-  { href: "/accounts", label: "Accounts" },
+  { href: "/accounts", label: "Accounts", badgeKey: "reauth" },
 ];
 
-export function DashboardNav({ user }: DashboardNavProps) {
+export function DashboardNav({ user, reauthBadgeCount = 0 }: DashboardNavProps) {
   async function logout() {
     "use server";
     await signOut({ redirectTo: "/login" });
@@ -32,16 +35,27 @@ export function DashboardNav({ user }: DashboardNavProps) {
             social-media-crm
           </Link>
           <ul className="flex items-center gap-4">
-            {NAV_LINKS.map((link) => (
-              <li key={link.href}>
-                <Link
-                  href={link.href}
-                  className="text-sm text-zinc-600 hover:text-zinc-900 focus-visible:outline-none focus-visible:underline dark:text-zinc-400 dark:hover:text-zinc-50"
-                >
-                  {link.label}
-                </Link>
-              </li>
-            ))}
+            {NAV_LINKS.map((link) => {
+              const showBadge = link.badgeKey === "reauth" && reauthBadgeCount > 0;
+              return (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    className="inline-flex items-center gap-1.5 text-sm text-zinc-600 hover:text-zinc-900 focus-visible:outline-none focus-visible:underline dark:text-zinc-400 dark:hover:text-zinc-50"
+                  >
+                    {link.label}
+                    {showBadge ? (
+                      <span
+                        aria-label={`${reauthBadgeCount} pages need re-authentication`}
+                        className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                      >
+                        {reauthBadgeCount}
+                      </span>
+                    ) : null}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </nav>
         <div className="flex items-center gap-3">

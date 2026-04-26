@@ -6,16 +6,25 @@ import { requireUserOrRedirect } from "@/lib/auth/session";
 import { getDecryptedFacebookToken } from "@/lib/db/repos/accounts";
 import { listPagesByOrganization, countPagesNeedingReauth } from "@/lib/db/repos/pages";
 import { listManagedPages } from "@/lib/publishers/facebook/pages";
+import { validatePagesBatch } from "@/lib/publishers/facebook/validate";
 
 export default async function AccountsPage() {
   const user = await requireUserOrRedirect();
   const membership = await requireCurrentMembership(user.id);
   const canManage = hasAtLeastRole(membership.role, "ADMIN");
 
-  const [pages, failingCount] = await Promise.all([
-    listPagesByOrganization(membership.organization.id),
-    countPagesNeedingReauth(membership.organization.id),
-  ]);
+  let pages = await listPagesByOrganization(membership.organization.id);
+
+  // Validate page tokens on view (debounced 60s per page in the validator).
+  // Best-effort — failures are logged but never abort the render. After
+  // validation we re-read the rows so a freshly-set needsReauth flag
+  // shows up in the same response.
+  if (pages.length > 0) {
+    await validatePagesBatch(pages);
+    pages = await listPagesByOrganization(membership.organization.id);
+  }
+
+  const failingCount = await countPagesNeedingReauth(membership.organization.id);
 
   // Best-effort: fetch managed pages for the picker. Failure here is
   // non-fatal — the dialog just shows zero candidates and the empty state.
